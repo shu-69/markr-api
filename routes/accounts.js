@@ -141,6 +141,77 @@ router.post('/register', async (req, res) => {
   }
 });
 
+// POST /accounts/updateProfile
+router.post('/updateProfile', async (req, res) => {
+  const db = mongoose.connection.db;
+  const collection = db.collection(USERS_COLLECTION);
+  const data = req.body;
+  const _id = data._id;
+
+  try {
+    if (!_id) return res.json({ success: false, err: 'User ID (_id) is required!' });
+
+    const objId = new ObjectId(_id);
+    const user = await collection.findOne({ _id: objId });
+    if (!user) return res.json({ success: false, err: 'User not found!' });
+
+    const updateData = { ...data };
+    delete updateData._id;         // Cannot update _id
+    delete updateData.submissions; // Protect submissions from accidental overwrite
+    delete updateData.password;    // Password should be updated via a different flow/API
+
+    // Handle email uniqueness check if email is being updated
+    if (updateData.email && updateData.email !== user.email) {
+      const emailExists = await collection.findOne({ email: updateData.email });
+      if (emailExists) return res.json({ success: false, err: 'Email already exists!' });
+    }
+
+    // Handle profile image upload to GridFS if it's a new base64 string
+    if (data.profile_img && typeof data.profile_img === 'string' && data.profile_img.startsWith('data:')) {
+      try {
+        const base64Data = data.profile_img.split(',')[1];
+        const imgBuffer = Buffer.from(base64Data, 'base64');
+        const bucket = new GridFSBucket(db, { bucketName: 'UserProfileImages' });
+        
+        // Delete old image if it exists
+        if (user.profile_img) {
+          try {
+            await bucket.delete(new ObjectId(user.profile_img));
+          } catch (e) {
+            console.error('Failed to delete old profile image', e);
+          }
+        }
+
+        const uploadStream = bucket.openUploadStream('img.jpg', {
+          chunkSizeBytes: 1048576,
+          metadata: { type: 'image' }
+        });
+        uploadStream.end(imgBuffer);
+        await new Promise((resolve, reject) => {
+          uploadStream.on('finish', resolve);
+          uploadStream.on('error', reject);
+        });
+        updateData.profile_img = uploadStream.id;
+      } catch (imgErr) {
+        console.error('Image upload failed', imgErr);
+        delete updateData.profile_img;
+      }
+    } else {
+      delete updateData.profile_img;
+    }
+
+    const result = await collection.updateOne({ _id: objId }, { $set: updateData });
+
+    if (result.acknowledged) {
+      res.json({ success: true });
+    } else {
+      res.json({ success: false, err: 'Update failed' });
+    }
+  } catch (err) {
+    res.json({ success: false, err: err.message });
+  }
+});
+
 // GET /accounts/checkEmailExists
 router.get('/checkEmailExists', async (req, res) => {
   const db = mongoose.connection.db;
