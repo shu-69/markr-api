@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const { encrypt, decrypt } = require('../services/encryption');
-const { GridFSBucket } = require('mongodb');
+const { GridFSBucket, ObjectId } = require('mongodb');
 
 const USERS_COLLECTION = 'users';
 
@@ -23,6 +23,25 @@ function generatePasswordFromDOB(dob) {
 function generateRandomPassword(n) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   return Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+async function getProfileImageBase64(db, profileImgId) {
+  if (!profileImgId) return null;
+  try {
+    const bucket = new GridFSBucket(db, { bucketName: 'UserProfileImages' });
+    const downloadStream = bucket.openDownloadStream(new ObjectId(profileImgId));
+    const chunks = [];
+    for await (const chunk of downloadStream) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+    const isSvg = buffer.slice(0, 10).toString().trim().startsWith('<svg');
+    const mimeType = isSvg ? 'image/svg+xml' : 'image/jpeg';
+    return `data:${mimeType};base64,${buffer.toString('base64')}`;
+  } catch (err) {
+    console.error('Error fetching profile image:', err);
+    return null;
+  }
 }
 
 // GET /accounts/help
@@ -54,6 +73,11 @@ router.get('/authenticate', async (req, res) => {
     delete result.password;
     delete result._id;
     delete result.submissions;
+
+    // Fetch profile image if it exists
+    if (result.profile_img) {
+      result.profile_img = await getProfileImageBase64(db, result.profile_img);
+    }
 
     res.json({ success: true, result });
   } catch (err) {
@@ -129,6 +153,61 @@ router.get('/getTotalAccounts', async (req, res) => {
   const db = mongoose.connection.db;
   const count = await db.collection(USERS_COLLECTION).countDocuments();
   res.json({ success: true, result: count });
+});
+
+// GET /accounts/user-details
+router.get('/user-details', async (req, res) => {
+  const { email, username } = req.query;
+  const db = mongoose.connection.db;
+  const collection = db.collection(USERS_COLLECTION);
+
+  try {
+    const query = email ? { email } : { username };
+    const doc = await collection.findOne(query);
+
+    if (!doc) {
+      return res.json({ success: false, err: 'User not found!' });
+    }
+
+    const result = { ...doc };
+    delete result.password;
+    delete result._id;
+    delete result.submissions;
+
+    // Fetch profile image if it exists
+    if (result.profile_img) {
+      result.profile_img = await getProfileImageBase64(db, result.profile_img);
+    }
+
+    res.json({ success: true, result });
+  } catch (err) {
+    res.json({ success: false, err: err.message });
+  }
+});
+
+// GET /accounts/profile-image/:id
+router.get('/profile-image/:id', async (req, res) => {
+  const db = mongoose.connection.db;
+  const bucket = new GridFSBucket(db, { bucketName: 'UserProfileImages' });
+
+  try {
+    const id = new ObjectId(req.params.id);
+    const downloadStream = bucket.openDownloadStream(id);
+
+    res.set('Content-Type', 'image/jpeg'); // Assuming JPEG as per registration code
+
+    downloadStream.pipe(res);
+
+    downloadStream.on('error', (err) => {
+      res.status(404).send('Image not found');
+    });
+
+    downloadStream.on('end', () => {
+      res.end();
+    });
+  } catch (err) {
+    res.status(400).send('Invalid image ID');
+  }
 });
 
 module.exports = router;
