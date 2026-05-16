@@ -71,11 +71,11 @@ router.get('/authenticate', async (req, res) => {
 
     const result = { ...doc };
     delete result.password;
-    delete result._id;
     delete result.submissions;
 
     // Fetch profile image if it exists
     if (result.profile_img) {
+      result.profile_img_id = result.profile_img; // Keep original ID
       result.profile_img = await getProfileImageBase64(db, result.profile_img);
     }
 
@@ -171,11 +171,11 @@ router.get('/user-details', async (req, res) => {
 
     const result = { ...doc };
     delete result.password;
-    delete result._id;
     delete result.submissions;
 
     // Fetch profile image if it exists
     if (result.profile_img) {
+      result.profile_img_id = result.profile_img; // Keep original ID
       result.profile_img = await getProfileImageBase64(db, result.profile_img);
     }
 
