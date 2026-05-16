@@ -57,7 +57,7 @@ router.get('/authenticate', async (req, res) => {
 
   try {
     const key = isValidEmail(username) ? 'email' : 'username';
-    const doc = await collection.findOne({ [key]: username });
+    const doc = await collection.findOne({ [key]: username }, { projection: { submissions: 0 } });
 
     if (!doc) {
       const errCode = key === 'email' ? 101 : 102;
@@ -70,8 +70,8 @@ router.get('/authenticate', async (req, res) => {
     }
 
     const result = { ...doc };
-    delete result.password;
-    delete result.submissions;
+    delete result.password; // Still needed as we fetch it for verification
+    // delete result.submissions; // Redundant due to projection
 
     // Fetch profile image if it exists
     if (result.profile_img) {
@@ -152,7 +152,7 @@ router.post('/updateProfile', async (req, res) => {
     if (!_id) return res.json({ success: false, err: 'User ID (_id) is required!' });
 
     const objId = new ObjectId(_id);
-    const user = await collection.findOne({ _id: objId });
+    const user = await collection.findOne({ _id: objId }, { projection: { submissions: 0, password: 0 } });
     if (!user) return res.json({ success: false, err: 'User not found!' });
 
     const updateData = { ...data };
@@ -234,15 +234,15 @@ router.get('/user-details', async (req, res) => {
 
   try {
     const query = email ? { email } : { username };
-    const doc = await collection.findOne(query);
+    const doc = await collection.findOne(query, { projection: { submissions: 0, password: 0 } });
 
     if (!doc) {
       return res.json({ success: false, err: 'User not found!' });
     }
 
     const result = { ...doc };
-    delete result.password;
-    delete result.submissions;
+    // delete result.password; // Redundant due to projection
+    // delete result.submissions; // Redundant due to projection
 
     // Fetch profile image if it exists
     if (result.profile_img) {
