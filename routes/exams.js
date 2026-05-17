@@ -55,9 +55,28 @@ router.get('/getPracticePapers', async (req, res) => {
 // GET /exams/getActiveTests
 router.get('/getActiveTests', async (req, res) => {
   const db = mongoose.connection.db;
-  const docs = await db.collection(TESTS).find({ isActive: true }).toArray();
-  docs.forEach(d => { d._id = d._id.toString(); });
-  res.json(docs);
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  try {
+    const total = await db.collection(TESTS).countDocuments({ isActive: true });
+    const docs = await db.collection(TESTS).find({ isActive: true }).skip(skip).limit(limit).toArray();
+    docs.forEach(d => { d._id = d._id.toString(); });
+    
+    res.json({
+      success: true,
+      result: docs,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, err: err.message });
+  }
 });
 
 // GET /exams/getActivePracticePapers
