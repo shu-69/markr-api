@@ -16,6 +16,7 @@ connectDB();
 
 // Routes
 app.use('/accounts', require('./routes/accounts'));
+app.use('/courses', require('./routes/courses'));
 app.use('/exams', require('./routes/exams'));
 app.use('/users', require('./routes/users'));
 app.use('/admin', require('./routes/admin'));

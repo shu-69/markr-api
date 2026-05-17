@@ -15,7 +15,8 @@ const UserSchema = new mongoose.Schema({
   name: { type: String },
   dob: { type: String },
   profile_img: { type: mongoose.Schema.Types.ObjectId },
-  transactions: [TransactionSchema]
+  transactions: [TransactionSchema],
+  enrolledCourses: [{ type: String }]
 }, { collection: 'users', strict: false });
 
 module.exports = mongoose.model('User', UserSchema);
