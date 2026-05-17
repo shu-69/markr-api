@@ -3,6 +3,7 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const { encrypt, decrypt } = require('../services/encryption');
 const { GridFSBucket, ObjectId } = require('mongodb');
+const User = require('../models/User');
 
 const USERS_COLLECTION = 'users';
 
@@ -278,6 +279,116 @@ router.get('/profile-image/:id', async (req, res) => {
     });
   } catch (err) {
     res.status(400).send('Invalid image ID');
+  }
+});
+
+// POST /accounts/saveTransaction
+router.post('/saveTransaction', async (req, res) => {
+  const { userId, razorpay_payment_id, amount, description, date, status } = req.body;
+
+  // 1. Validate required fields
+  if (!userId || !razorpay_payment_id || amount === undefined || !description) {
+    return res.status(400).json({
+      success: false,
+      err: 'Missing required fields: userId, razorpay_payment_id, amount, and description are required.'
+    });
+  }
+
+  try {
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        err: 'Invalid user ID format.'
+      });
+    }
+
+    // 2. Find User by userId
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        err: 'User not found'
+      });
+    }
+
+    // 3. Push transaction
+    const newTransaction = {
+      razorpay_payment_id,
+      amount,
+      description,
+      date: date ? new Date(date) : undefined,
+      status: status || 'success'
+    };
+
+    if (!user.transactions) {
+      user.transactions = [];
+    }
+    user.transactions.push(newTransaction);
+
+    // 4. Save user document
+    await user.save();
+
+    // 5. Return success
+    res.status(200).json({
+      success: true,
+      message: 'Transaction saved successfully to profile'
+    });
+  } catch (err) {
+    console.error('Error saving transaction:', err);
+    res.status(500).json({
+      success: false,
+      err: err.message
+    });
+  }
+});
+
+// GET /accounts/getTransactions
+router.get('/getTransactions', async (req, res) => {
+  const { userId } = req.query;
+
+  if (!userId) {
+    return res.status(400).json({
+      success: false,
+      err: 'userId query parameter is required.'
+    });
+  }
+
+  try {
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        err: 'Invalid user ID format.'
+      });
+    }
+
+    // 1. Find User by userId
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        err: 'User not found'
+      });
+    }
+
+    // 2. Retrieve transactions
+    let transactions = user.transactions || [];
+
+    // 3. Sort in-memory in descending order of date (most recent first)
+    transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // 4. Return sorted transactions
+    res.status(200).json({
+      success: true,
+      result: transactions
+    });
+  } catch (err) {
+    console.error('Error getting transactions:', err);
+    res.status(500).json({
+      success: false,
+      err: err.message
+    });
   }
 });
 
