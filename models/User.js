@@ -16,7 +16,12 @@ const UserSchema = new mongoose.Schema({
   dob: { type: String },
   profile_img: { type: mongoose.Schema.Types.ObjectId },
   transactions: [TransactionSchema],
-  enrolledCourses: [{ type: String }]
+  enrolledCourses: [{ type: String }],
+  instituteId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Institute',
+    required: true
+  }
 }, { collection: 'users', strict: false });
 
 module.exports = mongoose.model('User', UserSchema);
