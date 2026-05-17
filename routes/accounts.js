@@ -4,6 +4,9 @@ const mongoose = require('mongoose');
 const { encrypt, decrypt } = require('../services/encryption');
 const { GridFSBucket, ObjectId } = require('mongodb');
 const User = require('../models/User');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const auth = require('../middleware/auth');
 
 const USERS_COLLECTION = 'users';
 
@@ -50,9 +53,9 @@ router.get('/help', (req, res) => {
   res.send('Known Methods: authenticate (GET), register (POST), checkEmailExists (GET), getTotalAccounts (GET)');
 });
 
-// GET /accounts/authenticate
-router.get('/authenticate', async (req, res) => {
-  const { username, password } = req.query;
+// POST /accounts/authenticate
+router.post('/authenticate', async (req, res) => {
+  const { username, password } = req.body;
   const db = mongoose.connection.db;
   const collection = db.collection(USERS_COLLECTION);
 
@@ -65,14 +68,57 @@ router.get('/authenticate', async (req, res) => {
       return res.json({ success: false, err_code: errCode, err: `${key} not found!` });
     }
 
-    const decrypted = decrypt(doc.password);
-    if (password !== decrypted) {
+    let passwordMatch = false;
+    if (doc.password && (doc.password.startsWith('$2b$') || doc.password.startsWith('$2a$'))) {
+      passwordMatch = await bcrypt.compare(password, doc.password);
+    } else {
+      const decrypted = decrypt(doc.password);
+      passwordMatch = (password === decrypted);
+      
+      // Auto-upgrade password to bcrypt
+      if (passwordMatch) {
+         await collection.updateOne({ _id: doc._id }, { $set: { password: await bcrypt.hash(password, 10) } });
+      }
+    }
+
+    if (!passwordMatch) {
       return res.json({ success: false, err_code: 201, err: 'Password not matched!' });
     }
 
     const result = { ...doc };
-    delete result.password; // Still needed as we fetch it for verification
-    // delete result.submissions; // Redundant due to projection
+    delete result.password; 
+
+    // Fetch profile image if it exists
+    if (result.profile_img) {
+      result.profile_img_id = result.profile_img; // Keep original ID
+      result.profile_img = await getProfileImageBase64(db, result.profile_img);
+    }
+
+    const secret = process.env.JWT_SECRET || 'fallback_secret';
+    const token = jwt.sign({ userId: doc._id }, secret, { expiresIn: '7d' });
+
+    res.json({ success: true, token, result });
+  } catch (err) {
+    res.json({ success: false, err: err.message });
+  }
+});
+
+// GET /accounts/me
+router.get('/me', auth, async (req, res) => {
+  const db = mongoose.connection.db;
+  const collection = db.collection(USERS_COLLECTION);
+
+  try {
+    const doc = await collection.findOne(
+      { _id: new ObjectId(req.user.userId) }, 
+      { projection: { submissions: 0, password: 0 } }
+    );
+
+    if (!doc) {
+      return res.status(404).json({ success: false, err: 'User not found!' });
+    }
+
+    const result = { ...doc };
 
     // Fetch profile image if it exists
     if (result.profile_img) {
@@ -128,7 +174,7 @@ router.post('/register', async (req, res) => {
 
     const password = generatePasswordFromDOB(data.dob);
     data.username = username;
-    data.password = encrypt(password);
+    data.password = await bcrypt.hash(password, 10);
 
     const result = await collection.insertOne(data);
 
