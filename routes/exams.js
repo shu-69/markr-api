@@ -58,10 +58,37 @@ router.get('/getActiveTests', async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const skip = (page - 1) * limit;
+  
+  const search = req.query.search || '';
+  const sort = req.query.sort || '';
 
   try {
-    const total = await db.collection(TESTS).countDocuments({ isActive: true });
-    const docs = await db.collection(TESTS).find({ isActive: true }).skip(skip).limit(limit).toArray();
+    const query = { isActive: true };
+    if (search) {
+      query.title = { $regex: search, $options: 'i' };
+    }
+
+    const sortOptions = {};
+    if (sort === 'date') {
+      sortOptions['details.added_on'] = -1;
+    } else if (sort === 'title') {
+      sortOptions.title = 1;
+    } else if (sort === 'marks') {
+      sortOptions.marks = -1;
+    } else if (sort === 'time') {
+      sortOptions.time = 1;
+    }
+
+    const total = await db.collection(TESTS).countDocuments(query);
+    
+    let cursor = db.collection(TESTS).find(query);
+    
+    if (Object.keys(sortOptions).length > 0) {
+      cursor = cursor.sort(sortOptions);
+    }
+    
+    const docs = await cursor.skip(skip).limit(limit).toArray();
+    
     docs.forEach(d => { d._id = d._id.toString(); });
     
     res.json({
