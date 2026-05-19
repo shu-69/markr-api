@@ -5,6 +5,9 @@ const PracticePaperSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Institute',
     required: true
+  },
+  proctoring: {
+    enabled: { type: Boolean, default: false }
   }
 }, { collection: 'practice_papers', strict: false });
 
