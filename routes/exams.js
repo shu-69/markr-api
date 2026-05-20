@@ -302,6 +302,70 @@ async function addSubmissionToStudentProfile(db, email, submission) {
       { $push: { submissions: submissionWithStr } }
     );
 
+    // Calculate marks and award points/badges
+    let marksObtained = 0;
+    const isNegativeMarking = submission.examDetails?.negativeMarking;
+
+    if (submission.questions && Array.isArray(submission.questions)) {
+      submission.questions.forEach((element) => {
+        if (element.user_ans) {
+          let isCorrect = false;
+          switch (element.answer_type) {
+            case 'options':
+              isCorrect = (element.user_ans == element.answer_content?.correct_answer);
+              break;
+            case 'boolean':
+              isCorrect = (element.user_ans.toString().toLowerCase() == element.answer_content?.correct_answer?.toString().toLowerCase());
+              break;
+            case 'oneword':
+              isCorrect = (element.user_ans.toLowerCase() == element.answer_content?.correct_answer?.toLowerCase());
+              break;
+          }
+
+          if (isCorrect) {
+            marksObtained += (element.marks?.positive || 0);
+          } else if (isNegativeMarking && element.marks?.negative) {
+            let neg = element.marks.negative < 0 ? element.marks.negative * -1 : element.marks.negative;
+            marksObtained -= neg;
+          }
+        }
+      });
+    }
+
+    marksObtained = Math.max(0, marksObtained); // Don't give negative total points
+
+    // Update user points
+    await db.collection(USERS).updateOne(
+      { email },
+      { $inc: { points: marksObtained } }
+    );
+
+    // Check for badges
+    const userDoc = await db.collection(USERS).findOne({ email });
+    const currentPoints = userDoc?.points || 0;
+    const currentBadges = userDoc?.badges || [];
+    const newBadges = [];
+
+    // Badge logic
+    const hasBadge = (name) => currentBadges.some(b => b.name === name);
+
+    if (currentPoints >= 100 && !hasBadge('Centurion')) {
+      newBadges.push({ name: 'Centurion', icon: 'fa-star', dateAwarded: new Date() });
+    }
+    if (marksObtained >= (submission.examDetails?.totalMarks || 100) && !hasBadge('Perfect Score')) {
+      newBadges.push({ name: 'Perfect Score', icon: 'fa-trophy', dateAwarded: new Date() });
+    }
+    if (submission.questions && submission.questions.length > 0 && !hasBadge('First Exam Completed')) {
+      newBadges.push({ name: 'First Exam Completed', icon: 'fa-medal', dateAwarded: new Date() });
+    }
+
+    if (newBadges.length > 0) {
+      await db.collection(USERS).updateOne(
+        { email },
+        { $push: { badges: { $each: newBadges } } }
+      );
+    }
+
     return { success: result.acknowledged, submissionId: submission._id.toHexString() };
   } catch (err) {
     return { success: false, err: err.message };

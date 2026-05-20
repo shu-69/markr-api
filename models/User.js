@@ -21,7 +21,13 @@ const UserSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Institute',
     required: true
-  }
+  },
+  points: { type: Number, default: 0 },
+  badges: [{
+    name: String,
+    icon: String,
+    dateAwarded: { type: Date, default: Date.now }
+  }]
 }, { collection: 'users', strict: false });
 
 module.exports = mongoose.model('User', UserSchema);

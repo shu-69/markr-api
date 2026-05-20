@@ -20,6 +20,8 @@ app.use('/courses', require('./routes/courses'));
 app.use('/exams', require('./routes/exams'));
 app.use('/users', require('./routes/users'));
 app.use('/admin', require('./routes/admin'));
+app.use('/forums', require('./routes/forums'));
+app.use('/leaderboard', require('./routes/leaderboard'));
 
 // Root
 app.get('/', (req, res) => res.send('Markr API is running'));
